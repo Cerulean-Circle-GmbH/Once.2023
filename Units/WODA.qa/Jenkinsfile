@@ -13,37 +13,21 @@ pipeline {
     }
 
     options {
-        timeout(time: 5, unit: 'MINUTES') 
+        timeout(time: 5, unit: 'MINUTES')
         ansiColor('xterm')
     }
-    
+
     stages {
-        stage('Cleanup & update') {
+        stage('Cleanup & update (dev/neom)') {
             steps {
                 sh '''#!/usr/bin/bash
                     set -e
-                    rm -rf results
-                    mkdir -p results
-
-                    # Update EAMD
-                    cd /var/dev
-                    git clone 2cuBitbucket:donges/EAMD.ucp.git || true
-                    cd EAMD.ucp
-                    git reset --hard
-                    git fetch --prune
-                    git checkout dev/neom
-                    git pull
-
-                    # Update Once.2023
-                    cd /var/dev
-                    git clone 2cuGitHub:Cerulean-Circle-GmbH/Once.2023.git || true
-                    cd Once.2023
-                    git reset --hard
-                    git fetch --prune
-                    git checkout dev
-                    git pull
-
-                    env sh -c "$(wget -O- https://raw.githubusercontent.com/Cerulean-Circle-GmbH/once.sh/dev/init/oosh)"
+                    source ~/config/user.env
+                    Units/cleanupAndUpdateEAMD.sh dev/neom
+                    find $WORKSPACE -name "_*" | xargs rm -rf
+                    mkdir -p $WORKSPACE/_results
+                    oo mode.dev
+                    oo update
                     '''
             }
         }
@@ -52,8 +36,6 @@ pipeline {
                 sh '''#!/usr/bin/bash
                     set -e
                     source ~/config/user.env
-                    oo mode.dev
-                    oo update
                     once init
                     once domain.set localhost
                     once stage next
@@ -63,16 +45,11 @@ pipeline {
                     '''
             }
         }
-        stage('Check WODA status') {
+        stage('Check WODA status (dev/neom)') {
             steps {
                 sh '''#!/usr/bin/bash
                     set -e
                     source ~/config/user.env
-                    cd /var/dev/EAMD.ucp
-                    git reset --hard
-                    git fetch --prune
-                    git checkout dev/neom
-                    git pull
                     once status
                     '''
             }
@@ -98,9 +75,9 @@ EOF
                     #cd /var/dev/EAMD.ucp
                     #git status
                     #cat /var/dev/EAMD.ucp/Components/tla/EAM/layer1/Thinglish/Once/4.3.0/test/Once.mocha.test.js
-                    mkdir -p $WORKSPACE/results
-                    once test | tee $WORKSPACE/results/test.log
-                    if [ -n "`cat $WORKSPACE/results/test.log | grep failing`" ]; then
+                    mkdir -p $WORKSPACE/_results
+                    once test | tee $WORKSPACE/_results/test.log
+                    if [ -n "`cat $WORKSPACE/_results/test.log | grep failing`" ]; then
                         echo "FAILING ..."
                         exit 1
                     fi
@@ -110,7 +87,7 @@ EOF
     }
     post {
         always {
-            archiveArtifacts artifacts: 'results/*', onlyIfSuccessful: false
+            archiveArtifacts artifacts: '_results/*', onlyIfSuccessful: false
         }
     }
 }

@@ -3,13 +3,10 @@ pipeline {
         docker {
             image 'once.sh-builder'
             args '-v once_jenkins:/var/dev  -v jenkins_jenkins_home:/var/jenkins_home -w /var/dev --entrypoint "" --user root'
+            // docker run --rm -v .:/root/src -v /var/run/docker.sock:/var/run/docker.sock --entrypoint "" once.sh-builder /bin/bash -c "source ~/config/user.env && cd src/Units/docker-images/once.sh.ubuntu.22.04-server && ./devTool docker.build"
+            // docker run --rm -v .:/root/src -v /var/run/docker.sock:/var/run/docker.sock --entrypoint "" once.sh-builder /bin/bash -c "source ~/config/user.env && cd src/Units/docker-images/once.sh.ubuntu.22.04-builder && docker build -t once.sh-builder.inner ."
             reuseNode true
         }
-    }
-
-    environment {
-        // Ignore strict host key checking
-        GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=no'
     }
 
     options {
@@ -20,50 +17,10 @@ pipeline {
         stage('Print Checkout') {
             steps {
                 script {
-                  updateGitHubCommitStatus('pending', 'Build in progress')
+                    updateGitHubCommitStatus('pending', 'Build in progress')
                     def scmVars = checkout scm
                     echo "Checked out branch: ${scmVars.GIT_BRANCH}"
                 }
-            }
-        }
-
-        stage('build image once.sh-builder') {
-            steps {
-                sh '''
-                    set -e
-                    BRANCH=`echo $GIT_BRANCH | sed "s;origin/;;"`
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                            --entrypoint "" once.sh-builder /bin/bash -c \
-                            "source ~/config/user.env &&
-                            git clone 2cuGitHub:Cerulean-Circle-GmbH/Once.2023.git &&
-                            cd Once.2023 &&
-                            git checkout $BRANCH &&
-                            cd Units/docker-images/once.sh.ubuntu.22.04-builder &&
-                            ./devTool docker.build"
-                    '''
-            }
-        }
-
-        stage('build image once.sh-server') {
-            steps {
-                sh '''
-                    set -e
-                    BRANCH=`echo $GIT_BRANCH | sed "s;origin/;;"`
-                    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-                            --entrypoint "" once.sh-builder /bin/bash -c \
-                            "source ~/config/user.env &&
-                            git clone 2cuGitHub:Cerulean-Circle-GmbH/Once.2023.git &&
-                            cd Once.2023 &&
-                            git checkout $BRANCH &&
-                            cd Units/docker-images/once.sh.ubuntu.22.04-server &&
-                            ./devTool docker.build"
-                    '''
-            }
-        }
-
-        stage('show env') {
-            steps {
-                sh "env"
             }
         }
 
@@ -71,34 +28,48 @@ pipeline {
             steps {
                 sh '''#!/usr/bin/bash
                     set -e
-                    rm -rf _results
-                    mkdir -p _results
-
-                    # Update known_hosts (only for bitbucket once in a while)
-                    #ssh-keygen -f "/root/.ssh/known_hosts" -R "bitbucket.org"
-                    #ssh-keyscan -H bitbucket.org >> ~/.ssh/known_hosts
-
-                    # Update EAMD
-                    cd /var/dev
-                    git clone 2cuBitbucket:donges/EAMD.ucp.git || true
-                    cd EAMD.ucp
-                    git reset --hard
-                    git checkout dev/neom
-                    git pull
+                    Units/cleanupAndUpdateEAMD.sh dev/neom
+                    find $WORKSPACE -name "_*" | xargs rm -rf
+                    mkdir -p $WORKSPACE/_results
+                    git config --global --add safe.directory "*"
                     '''
             }
         }
 
-        stage('Static analysis of EAMD') {
+        stage('build image once.sh-builder') {
             steps {
                 sh '''#!/usr/bin/bash
                     set -e
                     source ~/config/user.env
-                    oo mode.dev
-                    oo update
-                    cd Units/staticAnalysis
-                    ./staticAnalysis.sh /var/dev/EAMD.ucp | tee $WORKSPACE/_results/staticAnalysis.txt
+                    cd Units/docker-images/once.sh.ubuntu.22.04-builder
+                    ./devTool docker.build
                     '''
+            }
+        }
+
+        stage('build image once.sh-server') {
+            steps {
+                sh '''#!/usr/bin/bash
+                    set -e
+                    source ~/config/user.env
+                    cd Units/docker-images/once.sh.ubuntu.22.04-server
+                    ./devTool docker.build
+                    '''
+            }
+        }
+
+        stage('build & deploy image once.sh-server multi-branch') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'DOCKER_IO_CRED', passwordVariable: 'DOCKER_PW', usernameVariable: 'DOCKER_LOGIN')]) {
+                    sh '''#!/usr/bin/bash
+                        set -e
+                        source ~/config/user.env
+                        cd Units/docker-images/once.sh.ubuntu.22.04-server
+                        ./devTool docker.buildx.use
+                        docker login -u ${DOCKER_LOGIN} --password ${DOCKER_PW}
+                        ./devTool docker.buildx.push
+                        '''
+                }
             }
         }
 
@@ -107,12 +78,9 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: "agent.jenkins", keyFileVariable: 'keyfile')]) {
                     sh '''#!/usr/bin/bash
                         set -e
-                        # TODO: Fix this correctly (error is: "dubious ownership of files")
-                        #git config --global --add safe.directory "*"
-                        #git branch -vv
                         ./scenario.deploy com/sfsre/backup/dev-neom deinit
                         ./scenario.deploy com/sfsre/backup/dev-neom init,up,test
-                        ./scenario.deploy com/sfsre/backup/dev-neom test -v > _results/com.sfsre.backup.dev-neom.log
+                        ./scenario.deploy com/sfsre/backup/dev-neom test -v > $WORKSPACE/_results/com.sfsre.backup.dev-neom.log
                     '''
                 }
             }

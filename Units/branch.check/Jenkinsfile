@@ -10,41 +10,29 @@ pipeline {
     environment {
         TREE = 'com/neom'
         NAME = 'com.neom'
-        // Ignore strict host key checking
-        GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=no'
     }
 
     options {
         ansiColor('xterm')
     }
-    
+
     stages {
+        stage('Print Checkout') {
+            steps {
+                script {
+                    def scmVars = checkout scm
+                    echo "Checked out branch: ${scmVars.GIT_BRANCH}"
+                }
+            }
+        }
+
         stage('Cleanup & update') {
             steps {
                 sh '''#!/usr/bin/bash
                     set -e
-                    rm -rf results
-                    mkdir -p results
-
-                    # Update known_hosts (only for bitbucket once in a while)
-                    #ssh-keygen -f "/root/.ssh/known_hosts" -R "bitbucket.org"
-                    #ssh-keyscan -H bitbucket.org >> ~/.ssh/known_hosts
-
-                    # Update EAMD
-                    cd /var/dev
-                    git clone 2cuBitbucket:donges/EAMD.ucp.git || true
-                    cd EAMD.ucp
-                    git reset --hard
-                    git checkout dev/neom
-                    git pull
-
-                    # Update Once.2023
-                    cd /var/dev
-                    git clone 2cuGitHub:Cerulean-Circle-GmbH/Once.2023.git || true
-                    cd Once.2023
-                    git reset --hard
-                    git checkout dev
-                    git pull
+                    Units/cleanupAndUpdateEAMD.sh dev/neom
+                    find $WORKSPACE -name "_*" | xargs rm -rf
+                    mkdir -p $WORKSPACE/_results
                     '''
             }
         }
@@ -56,13 +44,13 @@ pipeline {
                     oo mode.dev
                     oo update
                     cd /var/dev/EAMD.ucp
-                    export LOG_DEVICE=$WORKSPACE/results/branch.txt
+                    export LOG_DEVICE=$WORKSPACE/_results/branch.txt
                     config save log
                     oo branches.check feature/neom dev/neom 6a7a3d3
                     export LOG_DEVICE=/dev/stdout
                     config save log
-                    cat $WORKSPACE/results/branch.txt 
-                    cat $WORKSPACE/results/branch.txt | ansi2html > $WORKSPACE/results/branch.html
+                    cat $WORKSPACE/_results/branch.txt
+                    cat $WORKSPACE/_results/branch.txt | ansi2html > $WORKSPACE/_results/branch.html
                     '''
             }
         }
@@ -78,7 +66,7 @@ pipeline {
                     rm -rf $TMP
                     mkdir -p $TMP
                     rsync -a --include='*.js' --include='*/' --exclude='*' $SOURCE/ $TMP/
-                    wavi $TMP $WORKSPACE/results/$NAME.wavi.svg
+                    wavi $TMP $WORKSPACE/_results/$NAME.wavi.svg
                     '''
             }
         }
@@ -89,15 +77,15 @@ pipeline {
                     source ~/config/user.env
                     oo mode.dev
                     oo update
-                    cd /var/dev/Once.2023/Units/generatePUML
+                    cd ./Units/generatePUML
                     rm -rf _*
                     npm install
                     ./generatePUML.js /var/dev/EAMD.ucp/Components/com/neom
                     export PLANTUML_LIMIT_SIZE=18192
                     plantuml _test.puml -tsvg
                     plantuml _test.puml -tpng
-                    mv _test.svg $WORKSPACE/results/$NAME.puml.svg
-                    mv _test.png $WORKSPACE/results/$NAME.puml.png
+                    mv _test.svg $WORKSPACE/_results/$NAME.puml.svg
+                    mv _test.png $WORKSPACE/_results/$NAME.puml.png
                     '''
             }
         }
@@ -108,15 +96,15 @@ pipeline {
                     source ~/config/user.env
                     oo mode.dev
                     oo update
-                    cd /var/dev/Once.2023/Units/staticAnalysis
-                    ./staticAnalysis.sh /var/dev/EAMD.ucp | tee $WORKSPACE/results/staticAnalysis.txt
+                    cd ./Units/staticAnalysis
+                    ./staticAnalysis.sh /var/dev/EAMD.ucp | tee $WORKSPACE/_results/staticAnalysis.txt
                     '''
             }
         }
     }
     post {
         always {
-            archiveArtifacts artifacts: 'results/*', onlyIfSuccessful: true
+            archiveArtifacts artifacts: '_results/*', onlyIfSuccessful: true
         }
     }
 }

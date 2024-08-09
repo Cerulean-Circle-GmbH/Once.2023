@@ -1,0 +1,50 @@
+pipeline {
+    agent {
+        docker {
+            image 'once.sh-builder'
+            args '-v once_jenkins:/var/dev -v jenkins_jenkins_home:/var/jenkins_home -w /var/dev --entrypoint "" --user root'
+            reuseNode true
+        }
+    }
+
+    options {
+        ansiColor('xterm')
+    }
+
+    stages {
+        stage('Print Checkout') {
+            steps {
+                script {
+                    def scmVars = checkout scm
+                    echo "Checked out branch: ${scmVars.GIT_BRANCH}"
+                }
+            }
+        }
+
+        stage('Deploy dev/neom with latest structr server') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: "agent.jenkins", keyFileVariable: 'keyfile')]) {
+                    sh '''#!/usr/bin/bash
+                        set -e
+                        if [ -z "$SCENARIO_SRC_TAG" ]; then
+                            echo "SCENARIO_SRC_TAG is not set"
+                        else
+                            echo "SCENARIO_SRC_TAG is set to $SCENARIO_SRC_TAG"
+                            sed -i "s;SCENARIO_SRC_TAG=.*;SCENARIO_SRC_TAG=\"${SCENARIO_SRC_TAG}\";g" Scenarios/${SCENARIO_FULL_NAME}.scenario
+                        fi
+                        find $WORKSPACE -name "_*" | xargs rm -rf
+                        mkdir -p $WORKSPACE/_results
+                        ./scenario.deploy ${SCENARIO_FULL_NAME} deinit
+                        ./scenario.deploy ${SCENARIO_FULL_NAME} init,up,test
+                        ./scenario.deploy ${SCENARIO_FULL_NAME} test -v > $WORKSPACE/_results/$(echo ${SCENARIO_FULL_NAME} | sed "s;/;.;g").log
+                    '''
+                }
+            }
+        }
+    }
+    post {
+        always {
+            archiveArtifacts artifacts: '_results/*', onlyIfSuccessful: true
+        }
+    }
+}

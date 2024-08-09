@@ -10,30 +10,24 @@ pipeline {
     options {
         ansiColor('xterm')
     }
-    
+
     stages {
-        stage('Cleanup & update') {
+        stage('Print Checkout') {
             steps {
-                sh '''#!/usr/bin/bash
-                    set -e
-                    rm -rf results
-                    mkdir -p results
-                    cd /var/dev
-                    git clone 2cuGitHub:Cerulean-Circle-GmbH/Once.2023.git || true
-                    cd Once.2023
-                    git reset --hard
-                    git checkout dev
-                    git pull
-                    '''
+                script {
+                    def scmVars = checkout scm
+                    echo "Checked out branch: ${scmVars.GIT_BRANCH}"
+                }
             }
         }
+
         stage('Backup structr') {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: "agent.jenkins", keyFileVariable: 'keyfile'),
                                  string(credentialsId: 'jenkins4bitbucket', variable: 'BBTOKEN')]) {
                     sh '''#!/usr/bin/bash
                         set -e
-                        /var/dev/Once.2023/Units/backup/backupStructr.sh
+                        ./Units/backup/backupStructr.sh
                     '''
                 }
             }
@@ -43,7 +37,7 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: "agent.jenkins", keyFileVariable: 'keyfile')]) {
                     sh '''#!/usr/bin/bash
                         set -e
-                        /var/dev/Once.2023/Units/backup/backupJenkins.sh
+                        ./Units/backup/backupJenkins.sh
                     '''
                 }
             }
@@ -53,7 +47,7 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: "agent.jenkins", keyFileVariable: 'keyfile')]) {
                     sh '''#!/usr/bin/bash
                         set -e
-                        /var/dev/Once.2023/Units/backup/backupOnce.sh
+                        ./Units/backup/backupOnce.sh
                     '''
                 }
             }
@@ -63,9 +57,11 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: "agent.jenkins", keyFileVariable: 'keyfile')]) {
                     sh '''#!/usr/bin/bash
                         set -e
-                        ssh -i ${keyfile} -o 'StrictHostKeyChecking no' backup.sfsre.com "tree /var/backups" > results/tree.txt
-                        ssh -i ${keyfile} -o 'StrictHostKeyChecking no' backup.sfsre.com "du -skh /var/backups/*" > results/du.txt
-                        ssh -i ${keyfile} -o 'StrictHostKeyChecking no' backup.sfsre.com "df -h /var/backups/" >> results/du.txt
+                        find $WORKSPACE -name "_*" | xargs rm -rf
+                        mkdir -p $WORKSPACE/_results
+                        ssh -i ${keyfile} -o 'StrictHostKeyChecking no' backup.sfsre.com "tree /var/backups" > $WORKSPACE/_results/tree.txt
+                        ssh -i ${keyfile} -o 'StrictHostKeyChecking no' backup.sfsre.com "du -skh /var/backups/*" > $WORKSPACE/_results/du.txt
+                        ssh -i ${keyfile} -o 'StrictHostKeyChecking no' backup.sfsre.com "df -h /var/backups/" >> $WORKSPACE/_results/du.txt
                     '''
                 }
             }
@@ -73,7 +69,7 @@ pipeline {
     }
     post {
         always {
-            archiveArtifacts artifacts: 'results/*', onlyIfSuccessful: true
+            archiveArtifacts artifacts: '_results/*', onlyIfSuccessful: true
         }
     }
 }

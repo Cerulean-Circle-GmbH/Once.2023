@@ -6,11 +6,11 @@ SCENARIO_SRC_CACHEDIR="~/.cache/ONCE.2023-Scenarios"
 # Which ONCE docker image should be used?
 SCENARIO_SRC_ONCE_IMAGE="donges/once:latest"
 # Which ONCE branch should be restored (maybe tag dependent)?
-SCENARIO_SRC_ONCE_BRANCH="tag/neom/backup-structr-2023-05-30-08_23"
+SCENARIO_SRC_ONCE_BRANCH="tag/neom/backup-structr-${SCENARIO_SRC_TAG}"
 # Which path should be used as outer config?
 SCENARIO_SRC_ONCE_OUTERCONFIG="~"
 # What is the URI of the struct data backup file (maybe tag dependent)?
-SCENARIO_SRC_STRUCTR_DATAFILE="backup.sfsre.com:/var/backups/structr/backup-structr-2023-05-30-08_23_WODA-current.tar.gz"
+SCENARIO_SRC_STRUCTR_DATAFILE="backup.sfsre.com:/var/backups/structr/backup-structr-${SCENARIO_SRC_TAG}_WODA-current.tar.gz"
 ## Server setup
 # What is the server, the scenario will be deployed?
 SCENARIO_SERVER_NAME="test.wo-da.de"
